@@ -117,3 +117,10 @@ Important compatibility gate: nft JSON expression encoding can vary by nftables 
 `pps_nft_inspect.py` adds a narrowly scoped inspector for `nft -j list table inet pps_guard`. It uses an argument array with `shell=False`, no stdin, a bounded timeout, UTF-8 decoding, and a 256 KiB output limit. It never requests root and never applies rules. Results distinguish exact ownership, a retrieved-but-nonmatching table, and unknown state. In particular, non-zero exit, missing executable, timeout, or malformed command execution is never treated as proof that the table is absent.
 
 This inspector is not connected to session activation/deactivation. Its parser is still validated against synthetic fixtures only; it must be checked against actual nft JSON captured from the target Kali/nftables version in a disposable VM before it can authorize cleanup. No firewall changes have been made.
+
+
+## Explicit guard inspection states in session core
+
+The transaction core now uses `GuardStatus` with four distinct outcomes: `ABSENT`, `OWNED`, `FOREIGN_OR_MODIFIED`, and `UNKNOWN`. The backend contract must map command failures, timeouts, malformed JSON, and incomplete output to `UNKNOWN`; only a positively confirmed `ABSENT` permits initial installation, and only `OWNED` permits tunnel activation or cleanup. After deletion, the session requires a fresh `ABSENT` result. Mock tests cover unknown state during enable/disable and ensure it never triggers guard removal.
+
+The inspector and transaction core are still separate modules; no production Linux backend or automatic mapping between their result types exists yet. These changes harden the contract and tests only, not live networking.
