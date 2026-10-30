@@ -124,3 +124,10 @@ This inspector is not connected to session activation/deactivation. Its parser i
 The transaction core now uses `GuardStatus` with four distinct outcomes: `ABSENT`, `OWNED`, `FOREIGN_OR_MODIFIED`, and `UNKNOWN`. The backend contract must map command failures, timeouts, malformed JSON, and incomplete output to `UNKNOWN`; only a positively confirmed `ABSENT` permits initial installation, and only `OWNED` permits tunnel activation or cleanup. After deletion, the session requires a fresh `ABSENT` result. Mock tests cover unknown state during enable/disable and ensure it never triggers guard removal.
 
 The inspector and transaction core are still separate modules; no production Linux backend or automatic mapping between their result types exists yet. These changes harden the contract and tests only, not live networking.
+
+
+## Inspection-to-session adapter milestone
+
+`pps_privacy_adapter.py` maps the read-only inspector's three outcomes into the session manager's `GuardStatus`: OWNED, FOREIGN_OR_MODIFIED, and UNKNOWN. It deliberately cannot produce ABSENT. The current inspector invokes `nft -j list table inet pps_guard`; a failed command is ambiguous (missing table, permission failure, unavailable nft, or other error), so treating it as ABSENT would be unsafe. The adapter therefore cannot yet enable a fresh session by itself. A future read-only table-inventory operation must positively establish absence before the session can be safely wired to a Linux backend.
+
+The adapter is pure and has no system side effects. It is not yet connected to a production backend. Tests verify that no inspector result can be silently converted into ABSENT.
