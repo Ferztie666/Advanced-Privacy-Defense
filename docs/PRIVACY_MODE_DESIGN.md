@@ -75,3 +75,10 @@ Do not release the feature as production-ready until these tests pass on a real 
 ## Current implementation boundary
 
 The branch includes proxy-aware process launching, manual WireGuard profile up/down support, and a strict side-effect-free profile validator. The validator now supports IPv4-only providers only by declaring an explicit future IPv6 block policy; that policy is metadata, not an installed firewall rule. It does not yet implement the system-wide guard, full-tunnel verification, DNS/IPv6 leak prevention, or safe one-command ON/OFF session management. No provider profile or disposable Kali VM integration result is available yet. Therefore privacy on must not be advertised as available.
+
+
+## Firewall compiler milestone (not yet active)
+
+The branch now contains `pps_privacy_firewall.py`, a pure policy compiler that renders a dedicated `inet pps_guard` output chain with default-drop behavior. It allows loopback, established/related traffic, the selected WireGuard interface, the numeric VPN endpoint UDP flow, and optionally DHCPv4 renewal traffic. It rejects unsafe endpoint classes and invalid interface names. Unit tests verify that the generated rules never flush or replace the global ruleset.
+
+This is only a ruleset generator. It does not execute `nft`, install the table, inspect existing state, determine the physical route, bring up WireGuard, or perform rollback. It must not be used as a manual firewall command. Before integration, the implementation still needs disposable-VM validation for DHCP renewal, DNS behavior, IPv4/IPv6 leak blocking, endpoint routing/mark behavior, interaction with existing nftables base chains, and restoration. The session manager must refuse an existing `inet pps_guard` table rather than overwrite it, and must apply changes atomically.
