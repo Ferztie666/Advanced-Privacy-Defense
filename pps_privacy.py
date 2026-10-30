@@ -8,7 +8,6 @@ import base64
 import configparser
 import ipaddress
 import os
-import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -124,21 +123,28 @@ def parse_wireguard_profile(path: str | Path) -> WireGuardProfile:
     v6 = any(n.version == 6 and n.prefixlen == 0 for n in networks)
     partial_v4 = any(n.version == 4 for n in networks) and not v4
     partial_v6 = any(n.version == 6 for n in networks) and not v6
-    if not v4:
-        raise ValueError("PPS memerlukan full-tunnel IPv4 (0.0.0.0/0).")
     if partial_v4 or partial_v6:
         raise ValueError("Split-tunnel/AllowedIPs parsial belum didukung.")
+    if not v4:
+        raise ValueError("PPS memerlukan full-tunnel IPv4 (0.0.0.0/0).")
     if not any(a.version == 4 for a in parsed_addresses):
         raise ValueError("Full-tunnel IPv4 memerlukan Address IPv4 pada interface.")
     if v6 and not any(a.version == 6 for a in parsed_addresses):
         raise ValueError("Full-tunnel IPv6 memerlukan Address IPv6 pada interface.")
 
     endpoint = peer.get("endpoint", "")
-    match = re.fullmatch(r"\[([0-9a-fA-F:]+)\]:(\d{1,5})|([^:\[\]]+):(\d{1,5})", endpoint)
-    if not match:
-        raise ValueError("Endpoint wajib berupa alamat IP numerik dan port UDP; hostname ditolak untuk mencegah bootstrap DNS.")
-    host = match.group(1) or match.group(3)
-    port = int(match.group(2) or match.group(4))
+    if endpoint.startswith("["):
+        close = endpoint.find("]")
+        if close < 0 or close + 1 >= len(endpoint) or endpoint[close + 1] != ":":
+            raise ValueError("Format Endpoint IPv6 harus [alamat]:port.")
+        host, port_text = endpoint[1:close], endpoint[close + 2:]
+    else:
+        if endpoint.count(":") != 1:
+            raise ValueError("Endpoint harus berupa IPv4:port atau [IPv6]:port.")
+        host, port_text = endpoint.rsplit(":", 1)
+    if not port_text.isdigit() or not host:
+        raise ValueError("Endpoint wajib berupa alamat IP numerik dan port UDP.")
+    port = int(port_text)
     try:
         endpoint_ip = ipaddress.ip_address(host)
     except ValueError as exc:
