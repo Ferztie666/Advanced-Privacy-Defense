@@ -68,7 +68,7 @@ def _read_profile(path: Path) -> str:
 def parse_wireguard_profile(path: str | Path) -> WireGuardProfile:
     """Parse a deliberately narrow, safe subset of wg-quick configuration."""
     raw = _read_profile(Path(path))
-    if "\\x00" in raw:
+    if "\x00" in raw:
         raise ValueError("Profil mengandung byte NUL.")
     parser = configparser.ConfigParser(
         strict=True, interpolation=None, delimiters=("=",), comment_prefixes=("#", ";"),
@@ -134,7 +134,7 @@ def parse_wireguard_profile(path: str | Path) -> WireGuardProfile:
         raise ValueError("Full-tunnel IPv6 memerlukan Address IPv6 pada interface.")
 
     endpoint = peer.get("endpoint", "")
-    match = re.fullmatch(r"\\[([0-9a-fA-F:]+)\\]:(\\d{1,5})|([^:\\[\\]]+):(\\d{1,5})", endpoint)
+    match = re.fullmatch(r"\[([0-9a-fA-F:]+)\]:(\d{1,5})|([^:\[\]]+):(\d{1,5})", endpoint)
     if not match:
         raise ValueError("Endpoint wajib berupa alamat IP numerik dan port UDP; hostname ditolak untuk mencegah bootstrap DNS.")
     host = match.group(1) or match.group(3)
