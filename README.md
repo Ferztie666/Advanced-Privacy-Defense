@@ -9,7 +9,7 @@ Free/open-source Linux utility for proxy-aware application launches, existing Wi
 - Tor SOCKS5/SOCKS5H and HTTP(S) proxy validation.
 - HTTPS egress test with curl through the configured proxy.
 - Explicit Tor Project verification (`pps tor-check`) using the configured proxy and the official check API; reports verified Tor exit or failure.
-- Launch child processes with proxy environment variables after successful proxy preflight.
+- Launch child processes with proxy environment variables after successful proxy preflight.\n- `pps tool-run subfinder|dalfox|nuclei -- ...`: inject each supported scanner's native proxy flag after HTTPS preflight; Nmap is deliberately blocked in proxy-only mode because its proxy support does not cover every scan phase.
 - Manage existing /etc/wireguard/*.conf profiles using wg-quick and typed confirmation.
 - Read-only indicators for routes, resolver configuration, nftables, and WireGuard.
 - `pps redact-log FILE`: create a separate mode-0600 copy with common tokens, authorization/cookie headers, email addresses, and `/home/USER` paths redacted.
@@ -17,7 +17,7 @@ Free/open-source Linux utility for proxy-aware application launches, existing Wi
 - No telemetry.
 
 ## Scope and limitations
-**Application scope:** only processes launched by pps run receive proxy variables. Apps may ignore them or use other network paths. This is not transparent packet routing.
+**Application scope:** only processes launched by pps run receive proxy variables. Apps may ignore them or use other network paths. This is not transparent packet routing. The dedicated `tool-run` adapters pass native proxy flags to Subfinder (`-proxy`), Dalfox (`--proxy`), and Nuclei (`-proxy`). This is still not a proof that every auxiliary request or DNS lookup is proxied; validate the installed tool version and egress independently. Nmap is intentionally rejected by `tool-run` in proxy-only mode because Nmap documents that `--proxies` does not cover ping, port scanning, OS discovery, or proxy-side DNS resolution. Use a separately verified full-tunnel VPN for Nmap; PPS does not yet enforce a VPN kill switch.
 
 **System VPN scope:** WireGuard can change system routes using an existing administrator-provided profile. This project does not supply VPN servers or silently change firewall policy.
 
