@@ -91,10 +91,10 @@ def launch(command,proxy):
     try: return subprocess.run(command,env=env,check=False).returncode
     except OSError as e: print("Gagal menjalankan aplikasi:",e,file=sys.stderr); return 127
 def safe_profile(name):
-    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}",name): raise ValueError("Nama profil WireGuard tidak valid.")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}",name): raise ValueError("Nama profil WireGuard tidak valid.")
     return name
 def profiles(directory=WG_DIR):
-    try: return sorted(p.stem for p in directory.glob("*.conf") if p.is_file() and re.fullmatch(r"[A-Za-z0-9_.-]{1,64}",p.stem))
+    try: return sorted(p.stem for p in directory.glob("*.conf") if p.is_file() and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}",p.stem))
     except OSError: return []
 def wg_action(action,profile):
     if action not in {"up","down"}: raise ValueError("Aksi WireGuard tidak valid.")
