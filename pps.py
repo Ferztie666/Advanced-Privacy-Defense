@@ -126,29 +126,39 @@ def redact_text(content):
     return result
 
 def redact_file(source,destination=None):
-    """Write a private redacted copy without following symlinks or overwriting files."""
+    """Write a private redacted copy; open source without following symlinks."""
     import stat
 
     source=Path(source).expanduser()
+    flags=os.O_RDONLY | getattr(os,"O_NOFOLLOW",0) | getattr(os,"O_CLOEXEC",0)
     try:
-        source_mode=source.lstat().st_mode
-        source_size=source.stat().st_size
+        source_fd=os.open(source,flags)
     except OSError as e:
-        raise ValueError(f"File sumber tidak dapat diakses: {e}") from e
-    if not stat.S_ISREG(source_mode):
-        raise ValueError("Sumber harus file biasa; symlink dan special file ditolak.")
-    if source_size > 5*1024*1024:
-        raise ValueError("File melebihi batas 5 MiB.")
+        raise ValueError(f"File sumber tidak dapat dibuka dengan aman: {e}") from e
     try:
-        raw=source.read_bytes()
-    except OSError as e:
-        raise ValueError(f"File sumber gagal dibaca: {e}") from e
-    if len(raw) > 5*1024*1024:
-        raise ValueError("File melebihi batas 5 MiB.")
+        info=os.fstat(source_fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("Sumber harus file biasa; symlink dan special file ditolak.")
+        if info.st_size > 5*1024*1024:
+            raise ValueError("File melebihi batas 5 MiB.")
+        chunks=[]; total=0
+        while True:
+            chunk=os.read(source_fd,min(65536,5*1024*1024+1-total))
+            if not chunk: break
+            chunks.append(chunk); total+=len(chunk)
+            if total>5*1024*1024:
+                raise ValueError("File melebihi batas 5 MiB.")
+        raw=b"".join(chunks)
+    finally:
+        os.close(source_fd)
+
     cleaned=redact_text(raw.decode("utf-8",errors="replace"))
     target=Path(destination).expanduser() if destination else source.with_name(source.name+".redacted")
-    if target.resolve()==source.resolve():
-        raise ValueError("Output tidak boleh menimpa file sumber.")
+    try:
+        if target.exists() and os.path.samefile(source,target):
+            raise ValueError("Output tidak boleh menunjuk ke file sumber.")
+    except FileNotFoundError:
+        pass
     target.parent.mkdir(parents=True,exist_ok=True)
     if target.exists() or target.is_symlink():
         raise ValueError("File output sudah ada; pilih nama output lain agar data tidak tertimpa.")
@@ -157,9 +167,8 @@ def redact_file(source,destination=None):
         os.fchmod(fd,0o600)
         with os.fdopen(fd,"w",encoding="utf-8") as stream:
             stream.write(cleaned); stream.flush(); os.fsync(stream.fileno())
-        # Hard-link publication is atomic and fails if another process created target.
+        # Atomic no-clobber publication: link fails if target appeared concurrently.
         os.link(tmp,target)
-        os.chmod(target,0o600)
     except FileExistsError as e:
         raise ValueError("File output sudah ada; tidak ditimpa.") from e
     finally:
