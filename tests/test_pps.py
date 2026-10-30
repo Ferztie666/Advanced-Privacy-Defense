@@ -34,4 +34,22 @@ class ProxyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pps.save_config({"proxy":pps.DEFAULT_PROXY,"mode":"maximum","scope":"both"},Path(d)/"config.json")
 
+class LaunchSafetyTests(unittest.TestCase):
+    def test_launch_blocks_when_proxy_preflight_fails(self):
+        from unittest.mock import patch
+        with patch("pps.proxy_request", return_value=(False, "proxy unavailable")), \
+             patch("pps.subprocess.run") as run:
+            self.assertEqual(pps.launch(["/bin/true"], "socks5h://127.0.0.1:9050"), 2)
+            run.assert_not_called()
+
+    def test_launch_passes_proxy_environment_to_child(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        with patch("pps.proxy_request", return_value=(True, "198.51.100.2")), \
+             patch("pps.subprocess.run", return_value=SimpleNamespace(returncode=0)) as run:
+            self.assertEqual(pps.launch(["/bin/true"], "socks5h://127.0.0.1:9050"), 0)
+            env = run.call_args.kwargs["env"]
+            self.assertEqual(env["ALL_PROXY"], "socks5h://127.0.0.1:9050")
+            self.assertEqual(env["HTTPS_PROXY"], "socks5h://127.0.0.1:9050")
+
 if __name__=="__main__": unittest.main()
