@@ -82,3 +82,10 @@ The branch includes proxy-aware process launching, manual WireGuard profile up/d
 The branch now contains `pps_privacy_firewall.py`, a pure policy compiler that renders a dedicated `inet pps_guard` output chain with default-drop behavior. It allows loopback, established/related traffic, the selected WireGuard interface, the numeric VPN endpoint UDP flow, and optionally DHCPv4 renewal traffic. It rejects unsafe endpoint classes and invalid interface names. Unit tests verify that the generated rules never flush or replace the global ruleset.
 
 This is only a ruleset generator. It does not execute `nft`, install the table, inspect existing state, determine the physical route, bring up WireGuard, or perform rollback. It must not be used as a manual firewall command. Before integration, the implementation still needs disposable-VM validation for DHCP renewal, DNS behavior, IPv4/IPv6 leak blocking, endpoint routing/mark behavior, interaction with existing nftables base chains, and restoration. The session manager must refuse an existing `inet pps_guard` table rather than overwrite it, and must apply changes atomically.
+
+
+## Output-filter hardening update
+
+The generated output guard no longer includes a broad `ct state established,related accept` exception. A generic established-flow exception can keep pre-activation direct connections alive after the guard is enabled, weakening the intended fail-closed boundary. New outbound flows must leave through the WireGuard interface, except the narrowly scoped numeric endpoint UDP flow and optional DHCPv4 lease traffic. The pure renderer also exposes a delete statement for only `inet pps_guard`; a future manager must first verify the table's exact expected structure and ownership before using it.
+
+This remains a policy compiler and test artifact, not an installed kill switch. In particular, the WireGuard endpoint route/mark behavior, DHCP renewal, IPv6-only endpoint handling, existing nftables chains, and safe rollback have not yet been integration-tested. Do not manually apply generated rules on a working system.
