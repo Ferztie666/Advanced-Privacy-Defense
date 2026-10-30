@@ -49,9 +49,9 @@ class NftInspectionTests(unittest.TestCase):
         result, _ = self.run_with(returncode=1, stdout="")
         self.assertEqual(result.status, InspectionStatus.UNKNOWN)
 
-    def test_malformed_json_is_foreign_or_modified(self):
+    def test_malformed_json_is_unknown(self):
         result, _ = self.run_with(stdout="{")
-        self.assertEqual(result.status, InspectionStatus.FOREIGN_OR_MODIFIED)
+        self.assertEqual(result.status, InspectionStatus.UNKNOWN)
 
     def test_extra_rule_is_foreign_or_modified(self):
         import json
