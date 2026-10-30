@@ -72,6 +72,26 @@ def proxy_request(proxy,timeout=20):
     try: ipaddress.ip_address(value)
     except ValueError: return False,"Endpoint tes tidak mengembalikan IP valid."
     return True,value
+def tor_check(proxy=None,timeout=20):
+    """Verify the configured SOCKS proxy against Tor Project's own check API."""
+    proxy=proxy or load_config()["proxy"]
+    validate_proxy(proxy)
+    curl=shutil.which("curl")
+    if not curl: return False,"curl tidak ditemukan."
+    r=run_cmd([curl,"--silent","--show-error","--fail","--connect-timeout","8","--max-time",str(timeout),"--proxy",proxy,"--noproxy","","--proto","=https","--tlsv1.2","https://check.torproject.org/api/ip"],timeout+3)
+    if r is None: return False,"Tor check gagal/timeout."
+    if r.returncode: return False,r.stderr.strip() or "Tor check endpoint tidak dapat dijangkau."
+    try:
+        data=json.loads(r.stdout)
+        if not isinstance(data,dict) or not isinstance(data.get("IsTor"),bool):
+            raise ValueError("Respons API tidak memiliki IsTor boolean.")
+        exit_ip=str(ipaddress.ip_address(data.get("IP","")))
+    except (ValueError,TypeError,json.JSONDecodeError) as e:
+        return False,f"Respons Tor check tidak valid: {e}"
+    if data["IsTor"] is not True:
+        return False,f"Proxy merespons tetapi tidak terverifikasi sebagai exit Tor (IP: {exit_ip})."
+    return True,f"Tor terverifikasi oleh check.torproject.org; exit IP: {exit_ip}"
+
 def direct_ip_request():
     curl=shutil.which("curl")
     if not curl: return None
@@ -189,11 +209,12 @@ def gui():
     for label,fn in (("Save Proxy",save),("Test Proxy",test),("Network Audit",net),("Unit Tests",lambda: bg("Unit tests",run_tests))):
         ttk.Button(row,text=label,command=fn).pack(side="left",padx=3)
     log("Ready. Firewall global tidak diubah otomatis.")
+    log("CLI: pps tor-check untuk verifikasi exit Tor resmi.")
     log("WireGuard: gunakan CLI pps wg up/down NAMA_PROFIL.")
     root.mainloop(); return 0
 def main(argv=None):
     parser=argparse.ArgumentParser(prog="pps",description=APP); sub=parser.add_subparsers(dest="action")
-    for name in ("status","audit","live-test","self-test","gui"): sub.add_parser(name)
+    for name in ("status","audit","live-test","tor-check","self-test","gui"): sub.add_parser(name)
     p=sub.add_parser("set-proxy"); p.add_argument("url")
     p=sub.add_parser("run"); p.add_argument("--proxy",default=None); p.add_argument("command",nargs=argparse.REMAINDER)
     p=sub.add_parser("wg"); p.add_argument("operation",choices=("up","down")); p.add_argument("profile")
@@ -206,6 +227,8 @@ def main(argv=None):
         if a.action=="gui": return gui()
         if a.action=="set-proxy":
             c=load_config(); c["proxy"]=a.url; save_config(c); print("Proxy tersimpan."); return 0
+        if a.action=="tor-check":
+            ok,detail=tor_check(load_config()["proxy"]); print(("[PASS] " if ok else "[FAIL] ")+detail); return 0 if ok else 1
         if a.action=="live-test":
             ok,detail=proxy_request(load_config()["proxy"]); print(("[PASS] " if ok else "[FAIL] ")+detail)
             if ok:
