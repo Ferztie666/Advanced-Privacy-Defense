@@ -16,8 +16,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Validate installer syntax
+        run: bash -n install.sh
       - name: Compile
         run: python -m py_compile pps.py
+      - name: Validate CLI entry point
+        run: python pps.py --help
       - name: Built-in tests
         run: python pps.py self-test
       - name: Test suite
