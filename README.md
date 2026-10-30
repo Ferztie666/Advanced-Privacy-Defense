@@ -5,6 +5,7 @@ Free/open-source Linux utility for proxy-aware application launches, existing Wi
 **Status:** early release; not an anonymity guarantee or independently security-audited product.
 
 ## Features
+- Version 1.2.2: native proxy adapters for Subfinder, Dalfox, and Nuclei (`pps tool-run`); Nmap is blocked in proxy-only mode by design.
 - CLI and Tkinter advanced GUI.
 - Tor SOCKS5/SOCKS5H and HTTP(S) proxy validation.
 - HTTPS egress test with curl through the configured proxy.
