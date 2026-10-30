@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 APP="Advanced Privacy Defense"
-VERSION="1.2.0"
+VERSION="1.2.1"
 DEFAULT_PROXY="socks5h://127.0.0.1:9050"
 WG_DIR=Path("/etc/wireguard")
 def config_path():
