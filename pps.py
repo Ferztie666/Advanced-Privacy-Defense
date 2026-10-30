@@ -124,7 +124,7 @@ def audit():
     except OSError: dns=[]
     print("\n[DNS resolver config]:",", ".join(dns) or "Unknown")
     print("\n[FIREWALL]:",output(["nft","list","ruleset"]) if shutil.which("nft") else "nftables not installed")
-    print("\n[WIREGUARD]:",output(["sudo","wg","show","interfaces"]) if shutil.which("wg") else "wg missing")
+    print("\n[WIREGUARD]:",output(["wg","show","interfaces"]) if shutil.which("wg") else "wg missing")
     print("Profiles:",", ".join(profiles()) or "None")
     print("\nAudit ini indikator lokal, bukan penetration test/sertifikasi anonimitas. DNS, UDP, WebRTC, fingerprint, malware, dan korelasi trafik tidak diuji.")
 def self_test():
@@ -182,7 +182,11 @@ def gui():
             return "IPv4: "+output(["ip","-4","route","show","default"])+"\nIPv6: "+output(["ip","-6","route","show","default"])+"\nDNS: "+dns+"\nWireGuard profiles: "+(", ".join(profiles()) or "none")
         bg("Network audit",work)
     row=ttk.Frame(box); row.pack(fill="x")
-    for label,fn in (("Save Proxy",save),("Test Proxy",test),("Network Audit",net),("Unit Tests",lambda: bg("Tests",lambda:"Run pps self-test in terminal for detailed output."))):
+    def run_tests():
+        r=run_cmd([sys.executable,str(Path(__file__).resolve()),"self-test"],30)
+        if r is None: return "Unit tests gagal dijalankan/timeout."
+        return (r.stdout+"\n"+r.stderr).strip()
+    for label,fn in (("Save Proxy",save),("Test Proxy",test),("Network Audit",net),("Unit Tests",lambda: bg("Unit tests",run_tests))):
         ttk.Button(row,text=label,command=fn).pack(side="left",padx=3)
     log("Ready. Firewall global tidak diubah otomatis.")
     log("WireGuard: gunakan CLI pps wg up/down NAMA_PROFIL.")
