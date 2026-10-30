@@ -6,7 +6,6 @@ from unittest.mock import Mock
 from pps_privacy_firewall import FirewallPolicy
 from pps_privacy_session import GuardStatus
 from pps_nft_inventory import _target_table_present, inspect_guard_inventory
-from tests.test_nft_inspect import nft_json
 
 
 def inventory(*tables):
@@ -14,6 +13,23 @@ def inventory(*tables):
     items.extend({"table": t} for t in tables)
     return json.dumps({"nftables": items})
 
+
+
+def nft_json(policy):
+    from pps_privacy_ownership import _expected_rules
+    items = [
+        {"metainfo": {"version": "1.0.9"}},
+        {"table": {"family": "inet", "name": "pps_guard", "handle": 1}},
+        {"chain": {
+            "family": "inet", "table": "pps_guard", "name": "output",
+            "type": "filter", "hook": "output", "prio": -150, "policy": "drop",
+        }},
+    ]
+    for expr in _expected_rules(policy):
+        items.append({"rule": {
+            "family": "inet", "table": "pps_guard", "chain": "output", "expr": expr,
+        }})
+    return json.dumps({"nftables": items})
 
 class NftInventoryTests(unittest.TestCase):
     def setUp(self):
