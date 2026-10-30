@@ -21,6 +21,8 @@ class ProxyTests(unittest.TestCase):
     def test_safe_wg_profile(self): self.assertEqual(pps.safe_profile("wg-home_1"), "wg-home_1")
     def test_reject_wg_path_traversal(self):
         with self.assertRaises(ValueError): pps.safe_profile("../bad")
+    def test_reject_wg_option_like_name(self):
+        with self.assertRaises(ValueError): pps.safe_profile("--help")
     def test_config_permissions(self):
         with tempfile.TemporaryDirectory() as d:
             path=Path(d)/"nested"/"config.json"
