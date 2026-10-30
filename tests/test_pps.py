@@ -37,16 +37,16 @@ class ProxyTests(unittest.TestCase):
 class LaunchSafetyTests(unittest.TestCase):
     def test_launch_blocks_when_proxy_preflight_fails(self):
         from unittest.mock import patch
-        with patch("pps.proxy_request", return_value=(False, "proxy unavailable")), \
-             patch("pps.subprocess.run") as run:
+        with patch.object(pps, "proxy_request", return_value=(False, "proxy unavailable")), \
+             patch.object(pps.subprocess, "run") as run:
             self.assertEqual(pps.launch(["/bin/true"], "socks5h://127.0.0.1:9050"), 2)
             run.assert_not_called()
 
     def test_launch_passes_proxy_environment_to_child(self):
         from types import SimpleNamespace
         from unittest.mock import patch
-        with patch("pps.proxy_request", return_value=(True, "198.51.100.2")), \
-             patch("pps.subprocess.run", return_value=SimpleNamespace(returncode=0)) as run:
+        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \
+             patch.object(pps.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
             self.assertEqual(pps.launch(["/bin/true"], "socks5h://127.0.0.1:9050"), 0)
             env = run.call_args.kwargs["env"]
             self.assertEqual(env["ALL_PROXY"], "socks5h://127.0.0.1:9050")
