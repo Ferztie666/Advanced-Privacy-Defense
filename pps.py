@@ -38,9 +38,23 @@ def save_config(data,path=None):
         except FileNotFoundError: pass
 def load_config(path=None):
     path=path or config_path()
+    flags=os.O_RDONLY | getattr(os,"O_NOFOLLOW",0) | getattr(os,"O_CLOEXEC",0) | getattr(os,"O_NONBLOCK",0)
     try:
-        raw=path.read_bytes()
-        if len(raw)>16384: raise ValueError("File konfigurasi terlalu besar.")
+        fd=os.open(path,flags)
+        try:
+            info=os.fstat(fd)
+            if not __import__("stat").S_ISREG(info.st_mode):
+                raise ValueError("Konfigurasi harus berupa file biasa; symlink/special file ditolak.")
+            if info.st_size>16384: raise ValueError("File konfigurasi terlalu besar.")
+            chunks=[]; total=0
+            while True:
+                chunk=os.read(fd,min(4096,16385-total))
+                if not chunk: break
+                chunks.append(chunk); total+=len(chunk)
+                if total>16384: raise ValueError("File konfigurasi terlalu besar.")
+            raw=b"".join(chunks)
+        finally:
+            os.close(fd)
         data=json.loads(raw.decode("utf-8"))
         if not isinstance(data,dict): raise ValueError("Format konfigurasi tidak valid.")
         result=defaults(); result.update(data); validate_proxy(result["proxy"])
@@ -130,7 +144,7 @@ def redact_file(source,destination=None):
     import stat
 
     source=Path(source).expanduser()
-    flags=os.O_RDONLY | getattr(os,"O_NOFOLLOW",0) | getattr(os,"O_CLOEXEC",0)
+    flags=os.O_RDONLY | getattr(os,"O_NOFOLLOW",0) | getattr(os,"O_CLOEXEC",0) | getattr(os,"O_NONBLOCK",0)
     try:
         source_fd=os.open(source,flags)
     except OSError as e:
