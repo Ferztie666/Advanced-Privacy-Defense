@@ -27,6 +27,25 @@ class RedactionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pps.redact_file(source, source)
 
+    def test_refuses_to_overwrite_existing_destination(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / "source.log"
+            output = Path(folder) / "existing.txt"
+            source.write_text("token=secret", encoding="utf-8")
+            output.write_text("keep-me", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                pps.redact_file(source, output)
+            self.assertEqual(output.read_text(encoding="utf-8"), "keep-me")
+
+    def test_rejects_symlink_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            real = Path(folder) / "real.log"
+            link = Path(folder) / "link.log"
+            real.write_text("token=secret", encoding="utf-8")
+            link.symlink_to(real)
+            with self.assertRaises(ValueError):
+                pps.redact_file(link)
+
     def test_rejects_large_file(self):
         with tempfile.TemporaryDirectory() as folder:
             source = Path(folder) / "large.log"
