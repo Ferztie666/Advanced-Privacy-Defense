@@ -1,6 +1,11 @@
 import unittest
 
-from pps_privacy_firewall import FirewallPolicy, render_nftables, validate_policy
+from pps_privacy_firewall import (
+    FirewallPolicy,
+    render_nftables,
+    render_owned_table_delete,
+    validate_policy,
+)
 
 
 class FirewallPolicyTests(unittest.TestCase):
@@ -21,7 +26,7 @@ class FirewallPolicyTests(unittest.TestCase):
         self.assertIn('oifname "wg-test" accept', rules)
 
     def test_rejects_invalid_interface_injection(self):
-        for name in ('wg0; flush ruleset', 'wg/0', 'interface name that is too long'):
+        for name in ("wg0; flush ruleset", "wg/0", "interface name that is too long"):
             with self.subTest(name=name):
                 with self.assertRaises(ValueError):
                     render_nftables(FirewallPolicy("198.51.100.10", 51820, name))
@@ -45,9 +50,18 @@ class FirewallPolicyTests(unittest.TestCase):
         self.assertNotIn("flush table", rules)
         self.assertNotIn("add chain inet filter", rules)
 
+    def test_does_not_allow_generic_established_output(self):
+        rules = render_nftables(FirewallPolicy("198.51.100.10", 51820))
+        self.assertNotIn("ct state established", rules)
+        self.assertNotIn("ct state related", rules)
+
     def test_dhcp_exception_can_be_disabled(self):
         rules = render_nftables(FirewallPolicy("198.51.100.10", 51820, allow_dhcpv4=False))
         self.assertNotIn("udp sport 68 udp dport 67", rules)
+
+    def test_delete_plan_targets_only_pps_owned_table(self):
+        self.assertEqual(render_owned_table_delete(), "delete table inet pps_guard\n")
+        self.assertNotIn("flush ruleset", render_owned_table_delete())
 
 
 if __name__ == "__main__":
