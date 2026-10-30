@@ -29,6 +29,15 @@ class ProxyTests(unittest.TestCase):
             pps.save_config(pps.defaults(),path)
             self.assertEqual(pps.load_config(path)["mode"],"balanced")
             self.assertEqual(path.stat().st_mode & 0o777,0o600)
+    def test_reject_config_symlink(self):
+        with tempfile.TemporaryDirectory() as d:
+            real=Path(d)/"real.json"
+            link=Path(d)/"config.json"
+            pps.save_config(pps.defaults(),real)
+            link.symlink_to(real)
+            with self.assertRaises(OSError):
+                pps.load_config(link)
+
     def test_reject_unsupported_mode(self):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaises(ValueError):
