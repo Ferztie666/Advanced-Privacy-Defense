@@ -110,6 +110,41 @@ def launch(command,proxy):
     print("[WARN] Aplikasi tujuan masih dapat mengabaikan proxy environment.")
     try: return subprocess.run(command,env=env,check=False).returncode
     except OSError as e: print("Gagal menjalankan aplikasi:",e,file=sys.stderr); return 127
+def redact_text(content):
+    """Remove common credentials and local identity markers from text before sharing."""
+    patterns = [
+        (r"(?i)(authorization\s*:\s*bearer\s+)[^\s,;]+", r"\1[REDACTED]"),
+        (r"(?i)(authorization\s*:\s*basic\s+)[^\s,;]+", r"\1[REDACTED]"),
+        (r"(?i)(\b(?:password|passwd|token|api[_-]?key|secret|client_secret)\b\s*[=:]\s*)[\"']?[^\s,;\"']+", r"\1[REDACTED]"),
+        (r"(?i)(\b(?:set-cookie|cookie)\s*:\s*)[^\r\n]+", r"\1[REDACTED]"),
+        (r"(?i)([?&](?:token|key|secret|password|auth)=)[^&\s]+", r"\1[REDACTED]"),
+        (r"(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[EMAIL_REDACTED]"),
+        (r"(?i)(/home/)[^/\s]+", r"\1[USER]"),
+    ]
+    result=content
+    for pattern,replacement in patterns: result=re.sub(pattern,replacement,result)
+    return result
+
+def redact_file(source,destination=None):
+    source=Path(source).expanduser()
+    if not source.is_file(): raise ValueError("File sumber tidak ditemukan atau bukan file biasa.")
+    if source.stat().st_size > 5*1024*1024: raise ValueError("File melebihi batas 5 MiB.")
+    raw=source.read_text(encoding="utf-8",errors="replace")
+    cleaned=redact_text(raw)
+    target=Path(destination).expanduser() if destination else source.with_name(source.name+".redacted")
+    if target.resolve()==source.resolve(): raise ValueError("Output tidak boleh menimpa file sumber.")
+    target.parent.mkdir(parents=True,exist_ok=True)
+    fd,tmp=tempfile.mkstemp(prefix=".pps-redact-",dir=str(target.parent))
+    try:
+        os.fchmod(fd,0o600)
+        with os.fdopen(fd,"w",encoding="utf-8") as stream:
+            stream.write(cleaned); stream.flush(); os.fsync(stream.fileno())
+        os.replace(tmp,target); os.chmod(target,0o600)
+    finally:
+        try: os.unlink(tmp)
+        except FileNotFoundError: pass
+    return target
+
 def safe_profile(name):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}",name): raise ValueError("Nama profil WireGuard tidak valid.")
     return name
@@ -215,6 +250,7 @@ def gui():
 def main(argv=None):
     parser=argparse.ArgumentParser(prog="pps",description=APP); sub=parser.add_subparsers(dest="action")
     for name in ("status","audit","live-test","tor-check","self-test","gui"): sub.add_parser(name)
+    p=sub.add_parser("redact-log",help="Redact common secrets and local identifiers from a text log"); p.add_argument("file"); p.add_argument("-o","--output",default=None)
     p=sub.add_parser("set-proxy"); p.add_argument("url")
     p=sub.add_parser("run"); p.add_argument("--proxy",default=None); p.add_argument("command",nargs=argparse.REMAINDER)
     p=sub.add_parser("wg"); p.add_argument("operation",choices=("up","down")); p.add_argument("profile")
@@ -224,6 +260,8 @@ def main(argv=None):
             c=load_config(); print(f"{APP} v{VERSION}\nMode: {c['mode']} | Scope: {c['scope']}\nProxy: {c['proxy']}\nConfig: {config_path()}\nWireGuard: {', '.join(profiles()) or 'none'}"); return 0
         if a.action=="audit": audit(); return 0
         if a.action=="self-test": return self_test()
+        if a.action=="redact-log":
+            target=redact_file(a.file,a.output); print(f"Redacted copy saved: {target} (mode 0600). Review manually before sharing."); return 0
         if a.action=="gui": return gui()
         if a.action=="set-proxy":
             c=load_config(); c["proxy"]=a.url; save_config(c); print("Proxy tersimpan."); return 0
