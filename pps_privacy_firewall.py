@@ -46,7 +46,13 @@ def validate_policy(policy: FirewallPolicy) -> FirewallPolicy:
 
 
 def render_nftables(policy: FirewallPolicy) -> str:
-    """Render a fail-closed OUTPUT guard; does not apply it."""
+    """Render a fail-closed OUTPUT guard; does not apply it.
+
+    No generic established/related exception is used: that could preserve
+    pre-existing direct connections across activation. Replies to traffic
+    sent through WireGuard are accepted by conntrack on the return path and
+    do not require a broad OUTPUT exception.
+    """
     validate_policy(policy)
     endpoint = ipaddress.ip_address(policy.endpoint_ip)
     family = "ip6" if endpoint.version == 6 else "ip"
@@ -54,7 +60,6 @@ def render_nftables(policy: FirewallPolicy) -> str:
         f"add table {TABLE_FAMILY} {TABLE_NAME}",
         f"add chain {TABLE_FAMILY} {TABLE_NAME} output {{ type filter hook output priority -150; policy drop; }}",
         f'add rule {TABLE_FAMILY} {TABLE_NAME} output oifname "lo" accept',
-        f"add rule {TABLE_FAMILY} {TABLE_NAME} output ct state established,related accept",
         f'add rule {TABLE_FAMILY} {TABLE_NAME} output oifname "{policy.wg_interface}" accept',
     ]
     if policy.allow_dhcpv4:
@@ -63,3 +68,8 @@ def render_nftables(policy: FirewallPolicy) -> str:
         f"add rule {TABLE_FAMILY} {TABLE_NAME} output {family} daddr {endpoint} udp dport {policy.endpoint_port} accept"
     )
     return "\n".join(lines) + "\n"
+
+
+def render_owned_table_delete() -> str:
+    """Render deletion of only PPS's exact table; caller must verify ownership."""
+    return f"delete table {TABLE_FAMILY} {TABLE_NAME}\n"
