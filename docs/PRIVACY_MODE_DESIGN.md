@@ -103,3 +103,10 @@ This module deliberately has no concrete backend, subprocess calls, root escalat
 The session backend contract now separates `guard_exists()` from `guard_is_owned_and_expected()`. A matching table name alone is never sufficient proof of ownership: the future backend must inspect the complete table and compare it with the exact PPS-generated structure before cleanup. Disable refuses to remove a foreign or modified table. Activation verifies ownership after installation, and rollback after a partial install removes a guard only when the interface is proven down and exact ownership is confirmed. If ownership is uncertain, the state remains guarded-recovery and no destructive cleanup is attempted.
 
 This is still a mock-tested transaction contract, not an nftables inspector or Linux backend. The backend must implement ownership comparison defensively (including unexpected extra chains/rules and malformed nft output) and must not interpret command failure or incomplete output as proof of ownership. No live firewall or route changes have been made.
+
+
+## nftables ownership verifier milestone (read-only)
+
+A new pure verifier consumes the JSON representation of `nft -j list table inet pps_guard` and accepts ownership only when exactly one expected table, one output base chain, and the exact policy-derived rule sequence are present. It ignores kernel-assigned handles but rejects extra chains/rules/objects, changed chain policy, mismatched rules, malformed JSON, and incomplete output. The verifier does not run `nft`; it is not yet connected to the session backend.
+
+Important compatibility gate: nft JSON expression encoding can vary by nftables release and rule construction. The current expected schema is intentionally strict and unit tests use representative fixtures, not output captured from the target Kali release. Before using this verifier against a host, capture real output in a disposable VM, compare it with fixtures, and add version-specific compatibility tests. Any unknown shape must remain “ownership unproven”; never loosen the check to accept partial matches.
