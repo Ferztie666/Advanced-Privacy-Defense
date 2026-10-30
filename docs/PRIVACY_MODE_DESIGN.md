@@ -110,3 +110,10 @@ This is still a mock-tested transaction contract, not an nftables inspector or L
 A new pure verifier consumes the JSON representation of `nft -j list table inet pps_guard` and accepts ownership only when exactly one expected table, one output base chain, and the exact policy-derived rule sequence are present. It ignores kernel-assigned handles but rejects extra chains/rules/objects, changed chain policy, mismatched rules, malformed JSON, and incomplete output. The verifier does not run `nft`; it is not yet connected to the session backend.
 
 Important compatibility gate: nft JSON expression encoding can vary by nftables release and rule construction. The current expected schema is intentionally strict and unit tests use representative fixtures, not output captured from the target Kali release. Before using this verifier against a host, capture real output in a disposable VM, compare it with fixtures, and add version-specific compatibility tests. Any unknown shape must remain “ownership unproven”; never loosen the check to accept partial matches.
+
+
+## Read-only nftables inspection boundary milestone
+
+`pps_nft_inspect.py` adds a narrowly scoped inspector for `nft -j list table inet pps_guard`. It uses an argument array with `shell=False`, no stdin, a bounded timeout, UTF-8 decoding, and a 256 KiB output limit. It never requests root and never applies rules. Results distinguish exact ownership, a retrieved-but-nonmatching table, and unknown state. In particular, non-zero exit, missing executable, timeout, or malformed command execution is never treated as proof that the table is absent.
+
+This inspector is not connected to session activation/deactivation. Its parser is still validated against synthetic fixtures only; it must be checked against actual nft JSON captured from the target Kali/nftables version in a disposable VM before it can authorize cleanup. No firewall changes have been made.
