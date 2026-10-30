@@ -47,8 +47,8 @@ class ToolProxyTests(unittest.TestCase):
     def test_subfinder_native_proxy_flag(self):
         from types import SimpleNamespace
         from unittest.mock import patch
-        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \\
-             patch.object(pps.shutil, "which", return_value="/usr/bin/subfinder"), \\
+        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \
+             patch.object(pps.shutil, "which", return_value="/usr/bin/subfinder"), \
              patch.object(pps.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
             self.assertEqual(pps.launch_tool("subfinder", ["-d", "example.test"], pps.DEFAULT_PROXY), 0)
             command = run.call_args.args[0]
@@ -59,8 +59,8 @@ class ToolProxyTests(unittest.TestCase):
     def test_dalfox_native_proxy_flag(self):
         from types import SimpleNamespace
         from unittest.mock import patch
-        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \\
-             patch.object(pps.shutil, "which", return_value="/usr/bin/dalfox"), \\
+        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \
+             patch.object(pps.shutil, "which", return_value="/usr/bin/dalfox"), \
              patch.object(pps.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
             self.assertEqual(pps.launch_tool("dalfox", ["url", "https://example.test"], pps.DEFAULT_PROXY), 0)
             self.assertEqual(run.call_args.args[0][1:3], ["--proxy", pps.DEFAULT_PROXY])
@@ -68,8 +68,8 @@ class ToolProxyTests(unittest.TestCase):
     def test_nuclei_native_proxy_flag(self):
         from types import SimpleNamespace
         from unittest.mock import patch
-        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \\
-             patch.object(pps.shutil, "which", return_value="/usr/bin/nuclei"), \\
+        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \
+             patch.object(pps.shutil, "which", return_value="/usr/bin/nuclei"), \
              patch.object(pps.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
             self.assertEqual(pps.launch_tool("nuclei", ["-u", "https://example.test"], pps.DEFAULT_PROXY), 0)
             self.assertEqual(run.call_args.args[0][1:3], ["-proxy", pps.DEFAULT_PROXY])
@@ -83,8 +83,8 @@ class ToolProxyTests(unittest.TestCase):
 
     def test_tool_preflight_failure_blocks_execution(self):
         from unittest.mock import patch
-        with patch.object(pps, "proxy_request", return_value=(False, "proxy down")), \\
-             patch.object(pps.shutil, "which", return_value="/usr/bin/nuclei"), \\
+        with patch.object(pps, "proxy_request", return_value=(False, "proxy down")), \
+             patch.object(pps.shutil, "which", return_value="/usr/bin/nuclei"), \
              patch.object(pps.subprocess, "run") as run:
             self.assertEqual(pps.launch_tool("nuclei", ["-u", "https://example.test"], pps.DEFAULT_PROXY), 2)
             run.assert_not_called()
