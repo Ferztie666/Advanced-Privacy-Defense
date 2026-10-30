@@ -124,6 +124,55 @@ def launch(command,proxy):
     print("[WARN] Aplikasi tujuan masih dapat mengabaikan proxy environment.")
     try: return subprocess.run(command,env=env,check=False).returncode
     except OSError as e: print("Gagal menjalankan aplikasi:",e,file=sys.stderr); return 127
+TOOL_PROXY_FLAGS = {
+    "subfinder": "-proxy",
+    "dalfox": "--proxy",
+    "nuclei": "-proxy",
+}
+
+def launch_tool(tool, arguments, proxy):
+    """Run a supported scanner with its native proxy flag and fail-closed preflight.
+
+    Nmap is deliberately excluded: its --proxies option does not cover all scan
+    phases, so it cannot provide the egress protection this command promises.
+    """
+    tool = str(tool).lower()
+    if tool == "nmap":
+        print("[BLOCKED] Nmap tidak didukung dalam mode proxy PPS: --proxies tidak melindungi semua fase scan.", file=sys.stderr)
+        print("Gunakan VPN full-tunnel yang sudah diverifikasi secara terpisah; PPS belum menyediakan kill switch.", file=sys.stderr)
+        return 2
+    if tool not in TOOL_PROXY_FLAGS:
+        raise ValueError("Tool tidak didukung. Pilihan: subfinder, dalfox, nuclei; Nmap diblokir pada mode proxy.")
+    if not arguments:
+        raise ValueError("Argumen tool wajib diberikan setelah --.")
+    flag = TOOL_PROXY_FLAGS[tool]
+    if any(arg == flag or arg.startswith(flag + "=") for arg in arguments):
+        raise ValueError(f"Jangan berikan {flag} sendiri; PPS mengatur proxy secara terpusat.")
+    validate_proxy(proxy)
+    ok, detail = proxy_request(proxy)
+    if not ok:
+        print("[BLOCKED] Proxy preflight gagal:", detail, file=sys.stderr)
+        print("Tool tidak dijalankan.", file=sys.stderr)
+        return 2
+    executable = shutil.which(tool)
+    if not executable:
+        print(f"[BLOCKED] Executable {tool} tidak ditemukan di PATH.", file=sys.stderr)
+        return 127
+    env = os.environ.copy()
+    env.update({
+        "HTTP_PROXY": proxy, "HTTPS_PROXY": proxy, "ALL_PROXY": proxy,
+        "http_proxy": proxy, "https_proxy": proxy, "all_proxy": proxy,
+        "NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
+    })
+    command = [executable, flag, proxy, *arguments]
+    print(f"[PASS] Proxy preflight berhasil; menjalankan {tool} dengan native proxy flag.")
+    print("[WARN] Pastikan versi tool yang terpasang mendukung opsi tersebut; audit egress tetap diperlukan.")
+    try:
+        return subprocess.run(command, env=env, check=False).returncode
+    except OSError as e:
+        print(f"Gagal menjalankan {tool}: {e}", file=sys.stderr)
+        return 127
+
 def redact_text(content):
     """Remove common credentials and local identity markers from text before sharing."""
     patterns = [
@@ -298,6 +347,9 @@ def main(argv=None):
     p=sub.add_parser("redact-log",help="Redact common secrets and local identifiers from a text log"); p.add_argument("file"); p.add_argument("-o","--output",default=None)
     p=sub.add_parser("set-proxy"); p.add_argument("url")
     p=sub.add_parser("run"); p.add_argument("--proxy",default=None); p.add_argument("command",nargs=argparse.REMAINDER)
+    p=sub.add_parser("tool-run",help="Run supported scanners with native proxy integration")
+    p.add_argument("tool",choices=("subfinder","dalfox","nuclei","nmap"))
+    p.add_argument("--proxy",default=None); p.add_argument("arguments",nargs=argparse.REMAINDER)
     p=sub.add_parser("wg"); p.add_argument("operation",choices=("up","down")); p.add_argument("profile")
     a=parser.parse_args(argv)
     try:
