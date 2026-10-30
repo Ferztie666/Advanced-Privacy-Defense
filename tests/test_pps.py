@@ -43,6 +43,57 @@ class ProxyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pps.save_config({"proxy":pps.DEFAULT_PROXY,"mode":"maximum","scope":"both"},Path(d)/"config.json")
 
+class ToolProxyTests(unittest.TestCase):
+    def test_subfinder_native_proxy_flag(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \\
+             patch.object(pps.shutil, "which", return_value="/usr/bin/subfinder"), \\
+             patch.object(pps.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
+            self.assertEqual(pps.launch_tool("subfinder", ["-d", "example.test"], pps.DEFAULT_PROXY), 0)
+            command = run.call_args.args[0]
+            self.assertEqual(command[:3], ["/usr/bin/subfinder", "-proxy", pps.DEFAULT_PROXY])
+            self.assertEqual(command[3:], ["-d", "example.test"])
+            self.assertNotIn("shell", run.call_args.kwargs)
+
+    def test_dalfox_native_proxy_flag(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \\
+             patch.object(pps.shutil, "which", return_value="/usr/bin/dalfox"), \\
+             patch.object(pps.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
+            self.assertEqual(pps.launch_tool("dalfox", ["url", "https://example.test"], pps.DEFAULT_PROXY), 0)
+            self.assertEqual(run.call_args.args[0][1:3], ["--proxy", pps.DEFAULT_PROXY])
+
+    def test_nuclei_native_proxy_flag(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        with patch.object(pps, "proxy_request", return_value=(True, "198.51.100.2")), \\
+             patch.object(pps.shutil, "which", return_value="/usr/bin/nuclei"), \\
+             patch.object(pps.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
+            self.assertEqual(pps.launch_tool("nuclei", ["-u", "https://example.test"], pps.DEFAULT_PROXY), 0)
+            self.assertEqual(run.call_args.args[0][1:3], ["-proxy", pps.DEFAULT_PROXY])
+
+    def test_nmap_proxy_mode_is_blocked(self):
+        from unittest.mock import patch
+        with patch.object(pps, "proxy_request") as preflight, patch.object(pps.subprocess, "run") as run:
+            self.assertEqual(pps.launch_tool("nmap", ["-sV", "example.test"], pps.DEFAULT_PROXY), 2)
+            preflight.assert_not_called()
+            run.assert_not_called()
+
+    def test_tool_preflight_failure_blocks_execution(self):
+        from unittest.mock import patch
+        with patch.object(pps, "proxy_request", return_value=(False, "proxy down")), \\
+             patch.object(pps.shutil, "which", return_value="/usr/bin/nuclei"), \\
+             patch.object(pps.subprocess, "run") as run:
+            self.assertEqual(pps.launch_tool("nuclei", ["-u", "https://example.test"], pps.DEFAULT_PROXY), 2)
+            run.assert_not_called()
+
+    def test_user_cannot_override_native_proxy_flag(self):
+        with self.assertRaises(ValueError):
+            pps.launch_tool("subfinder", ["-proxy", "http://127.0.0.1:8080", "-d", "example.test"], pps.DEFAULT_PROXY)
+
+
 class LaunchSafetyTests(unittest.TestCase):
     def test_launch_blocks_when_proxy_preflight_fails(self):
         from unittest.mock import patch
