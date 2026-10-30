@@ -28,13 +28,14 @@ Linux, Python 3.10+, curl; Tkinter for GUI. Optional: Tor, WireGuard tools, nfta
 
 ## Install on Debian/Ubuntu/Kali
 ```bash
-sudo apt update
-sudo apt install -y python3 python3-tk curl tor wireguard-tools nftables iproute2
 git clone https://github.com/Ferztie666/Advanced-Privacy-Defense.git
 cd Advanced-Privacy-Defense
-python3 pps.py self-test
-python3 pps.py status
+bash install.sh
+export PATH="$HOME/.local/bin:$PATH"
+pps status
 ```
+
+The installer installs distro packages and copies the app to ~/.local/share. It does not enable Tor or alter firewall rules automatically.
 
 Run GUI: `python3 pps.py gui`
 
