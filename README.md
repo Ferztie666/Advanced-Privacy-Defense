@@ -7,10 +7,10 @@ Free/open-source Linux utility for proxy-aware application launches, existing Wi
 ## Features
 - CLI and Tkinter advanced GUI.
 - Tor SOCKS5/SOCKS5H and HTTP(S) proxy validation.
-- HTTPS egress test with curl through the configured proxy.
+- HTTPS egress test with curl through the configured proxy.\n- Explicit Tor Project verification (`pps tor-check`) using the configured proxy and the official check API; reports verified Tor exit or failure.
 - Launch child processes with proxy environment variables after successful proxy preflight.
 - Manage existing /etc/wireguard/*.conf profiles using wg-quick and typed confirmation.
-- Read-only indicators for routes, resolver configuration, nftables, and WireGuard.
+- Read-only indicators for routes, resolver configuration, nftables, and WireGuard.\n- `pps redact-log FILE`: create a separate mode-0600 copy with common tokens, authorization/cookie headers, email addresses, and `/home/USER` paths redacted.
 - Atomic configuration writes with restrictive permissions.
 - No telemetry.
 
@@ -19,7 +19,7 @@ Free/open-source Linux utility for proxy-aware application launches, existing Wi
 
 **System VPN scope:** WireGuard can change system routes using an existing administrator-provided profile. This project does not supply VPN servers or silently change firewall policy.
 
-Tor SOCKS is not a general-purpose VPN. UDP, all DNS behavior, browser WebRTC, fingerprinting, malware, account identity, and traffic correlation are not comprehensively protected. A successful curl test proves only that the test request reached its HTTPS endpoint through the configured proxy.
+Tor SOCKS is not a general-purpose VPN. UDP, all DNS behavior, browser WebRTC, fingerprinting, malware, account identity, and traffic correlation are not comprehensively protected. A successful `pps live-test` proves only that the test request reached its HTTPS endpoint through the configured proxy. `pps tor-check` additionally checks whether the Tor Project check API recognizes that request as coming from a Tor exit. This validates that single test request, not every application or all system traffic.
 
 No automatic kill switch is installed and no global nftables rules are modified.
 
@@ -70,7 +70,7 @@ python3 pps.py self-test
 python3 -m unittest discover -s tests -v
 python3 -m py_compile pps.py
 ```
-Tests cover proxy URL validation, rejection of embedded credentials/path traversal, and config permissions. live-test performs a real HTTPS request through the configured proxy and optionally compares direct egress IP. Network tests need a working proxy and internet.
+Tests cover proxy URL validation, rejection of embedded credentials/path traversal, config permissions, Tor-check response handling, and log-redaction behavior. live-test performs a real HTTPS request through the configured proxy and optionally compares direct egress IP. Network tests need a working proxy and internet.
 
 ## Security model
 - No shell is used for subprocess execution.
