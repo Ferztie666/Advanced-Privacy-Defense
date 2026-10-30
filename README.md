@@ -85,3 +85,22 @@ Tests cover proxy URL validation, rejection of embedded credentials/path travers
 
 ## License
 MIT; see LICENSE.
+
+## PPS full-tunnel privacy guard development status
+
+The repository now contains a **read-only** nftables inventory and ownership
+inspection layer for the planned system-wide WireGuard privacy session. It
+uses a complete `nft -j list tables` inventory before it can report the
+PPS-owned table absent; command errors, oversized/malformed output, unknown
+JSON objects, and duplicate target entries remain UNKNOWN. If the table is
+listed, a separate exact-policy inspection is required before it is classified
+as PPS-owned. This is not yet connected to a privileged backend and does not
+install or remove firewall rules or start WireGuard.
+
+The JSON shape is covered by synthetic unit fixtures only. Before any live
+integration, capture and validate the actual nftables JSON schema on the target
+Kali release in a disposable VM. The full-tunnel guard is not production-ready:
+route handling, endpoint reachability, DHCP/NAT behavior, DNS and IPv6 leak
+blocking, rollback, and tunnel-loss fail-closed behavior still require
+end-to-end VM tests and independent review. Do not enable it on a daily-use
+host.
