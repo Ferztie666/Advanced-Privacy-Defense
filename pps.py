@@ -126,20 +126,42 @@ def redact_text(content):
     return result
 
 def redact_file(source,destination=None):
+    """Write a private redacted copy without following symlinks or overwriting files."""
+    import stat
+
     source=Path(source).expanduser()
-    if not source.is_file(): raise ValueError("File sumber tidak ditemukan atau bukan file biasa.")
-    if source.stat().st_size > 5*1024*1024: raise ValueError("File melebihi batas 5 MiB.")
-    raw=source.read_text(encoding="utf-8",errors="replace")
-    cleaned=redact_text(raw)
+    try:
+        source_mode=source.lstat().st_mode
+        source_size=source.stat().st_size
+    except OSError as e:
+        raise ValueError(f"File sumber tidak dapat diakses: {e}") from e
+    if not stat.S_ISREG(source_mode):
+        raise ValueError("Sumber harus file biasa; symlink dan special file ditolak.")
+    if source_size > 5*1024*1024:
+        raise ValueError("File melebihi batas 5 MiB.")
+    try:
+        raw=source.read_bytes()
+    except OSError as e:
+        raise ValueError(f"File sumber gagal dibaca: {e}") from e
+    if len(raw) > 5*1024*1024:
+        raise ValueError("File melebihi batas 5 MiB.")
+    cleaned=redact_text(raw.decode("utf-8",errors="replace"))
     target=Path(destination).expanduser() if destination else source.with_name(source.name+".redacted")
-    if target.resolve()==source.resolve(): raise ValueError("Output tidak boleh menimpa file sumber.")
+    if target.resolve()==source.resolve():
+        raise ValueError("Output tidak boleh menimpa file sumber.")
     target.parent.mkdir(parents=True,exist_ok=True)
+    if target.exists() or target.is_symlink():
+        raise ValueError("File output sudah ada; pilih nama output lain agar data tidak tertimpa.")
     fd,tmp=tempfile.mkstemp(prefix=".pps-redact-",dir=str(target.parent))
     try:
         os.fchmod(fd,0o600)
         with os.fdopen(fd,"w",encoding="utf-8") as stream:
             stream.write(cleaned); stream.flush(); os.fsync(stream.fileno())
-        os.replace(tmp,target); os.chmod(target,0o600)
+        # Hard-link publication is atomic and fails if another process created target.
+        os.link(tmp,target)
+        os.chmod(target,0o600)
+    except FileExistsError as e:
+        raise ValueError("File output sudah ada; tidak ditimpa.") from e
     finally:
         try: os.unlink(tmp)
         except FileNotFoundError: pass
