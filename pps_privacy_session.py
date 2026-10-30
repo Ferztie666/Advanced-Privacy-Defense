@@ -16,6 +16,13 @@ class SessionState(str, Enum):
     GUARDED_RECOVERY = "guarded-recovery"
 
 
+class GuardStatus(str, Enum):
+    ABSENT = "absent"
+    OWNED = "owned"
+    FOREIGN_OR_MODIFIED = "foreign-or-modified"
+    UNKNOWN = "unknown"
+
+
 @dataclass(frozen=True)
 class SessionResult:
     state: SessionState
@@ -24,8 +31,7 @@ class SessionResult:
 
 
 class PrivacyBackend(Protocol):
-    def guard_exists(self) -> bool: ...
-    def guard_is_owned_and_expected(self) -> bool: ...
+    def inspect_guard(self) -> GuardStatus: ...
     def install_guard(self) -> None: ...
     def interface_is_up(self) -> bool: ...
     def bring_interface_up(self) -> None: ...
@@ -39,9 +45,9 @@ class PrivacyBackend(Protocol):
 class PrivacySession:
     """Orchestrates strict order; all effects are delegated to an injected backend.
 
-    Ownership means more than the table name: a backend must compare the complete
-    PPS-owned nftables table against the exact expected structure before allowing
-    removal. This core intentionally cannot perform that inspection itself.
+    The backend must return GuardStatus.UNKNOWN when nft inspection fails or
+    output is incomplete. UNKNOWN is never equivalent to ABSENT and never
+    authorizes installation, tunnel activation, or guard deletion.
     """
 
     def __init__(self, backend: PrivacyBackend):
@@ -49,20 +55,22 @@ class PrivacySession:
 
     def _remove_guard_if_proven_safe(self) -> bool:
         b = self.backend
-        if not b.guard_exists():
+        status = b.inspect_guard()
+        if status == GuardStatus.ABSENT:
             return True
-        if b.interface_is_up() or not b.guard_is_owned_and_expected():
+        if status != GuardStatus.OWNED or b.interface_is_up():
             return False
         b.remove_owned_guard()
-        return not b.guard_exists()
+        return b.inspect_guard() == GuardStatus.ABSENT
 
     def enable(self) -> SessionResult:
         b = self.backend
         try:
-            if b.guard_exists():
+            initial_guard = b.inspect_guard()
+            if initial_guard != GuardStatus.ABSENT:
                 return SessionResult(
                     SessionState.GUARDED_RECOVERY, False,
-                    "Tabel guard sudah ada; menolak menimpa state yang tidak dikenal.",
+                    f"Status guard awal {initial_guard.value}; menolak mengubah state yang tidak pasti.",
                 )
             if b.interface_is_up():
                 return SessionResult(
@@ -70,10 +78,10 @@ class PrivacySession:
                     "Interface WireGuard sudah aktif di luar sesi PPS; tidak mengubahnya.",
                 )
             b.install_guard()
-            if not b.guard_exists() or not b.guard_is_owned_and_expected():
+            if b.inspect_guard() != GuardStatus.OWNED:
                 return SessionResult(
                     SessionState.GUARDED_RECOVERY, False,
-                    "Guard tidak ada atau struktur/kepemilikannya tidak cocok; tidak menjalankan tunnel.",
+                    "Guard tidak dapat dibuktikan sebagai tabel PPS yang tepat; tunnel tidak dijalankan.",
                 )
             b.bring_interface_up()
             if not b.interface_is_up():
@@ -86,8 +94,6 @@ class PrivacySession:
                 raise RuntimeError("Egress melalui VPN tidak terverifikasi.")
             return SessionResult(SessionState.ACTIVE, True, "Sesi privacy aktif dan seluruh pemeriksaan lulus.")
         except Exception as exc:
-            # A partially installed guard may exist even if install_guard raises.
-            # Remove it only after proving tunnel-down and exact PPS ownership.
             try:
                 if b.interface_is_up():
                     b.bring_interface_down()
@@ -99,7 +105,7 @@ class PrivacySession:
                 if not self._remove_guard_if_proven_safe():
                     return SessionResult(
                         SessionState.GUARDED_RECOVERY, False,
-                        f"Aktivasi gagal ({exc}); guard tidak dapat dibuktikan milik PPS/aman dihapus.",
+                        f"Aktivasi gagal ({exc}); guard tidak terbukti aman dihapus.",
                     )
                 return SessionResult(
                     SessionState.OFF, False,
@@ -114,17 +120,18 @@ class PrivacySession:
     def disable(self) -> SessionResult:
         b = self.backend
         try:
-            if not b.guard_exists():
+            status = b.inspect_guard()
+            if status == GuardStatus.ABSENT:
                 if b.interface_is_up():
                     return SessionResult(
                         SessionState.GUARDED_RECOVERY, False,
                         "Interface aktif tanpa guard PPS; tidak melakukan perubahan otomatis.",
                     )
                 return SessionResult(SessionState.OFF, True, "Sesi sudah nonaktif.")
-            if not b.guard_is_owned_and_expected():
+            if status != GuardStatus.OWNED:
                 return SessionResult(
                     SessionState.GUARDED_RECOVERY, False,
-                    "Guard ditemukan tetapi struktur/kepemilikannya tidak cocok; tidak mengubahnya.",
+                    f"Guard berstatus {status.value}; tidak melakukan perubahan otomatis.",
                 )
             if b.interface_is_up():
                 b.bring_interface_down()
@@ -134,10 +141,10 @@ class PrivacySession:
                     "WireGuard belum terbukti down; guard tetap dipertahankan.",
                 )
             b.remove_owned_guard()
-            if b.guard_exists():
+            if b.inspect_guard() != GuardStatus.ABSENT:
                 return SessionResult(
                     SessionState.GUARDED_RECOVERY, False,
-                    "Guard masih terdeteksi setelah penghapusan; perlu pemulihan manual.",
+                    "Guard belum terbukti hilang setelah penghapusan; perlu pemulihan manual.",
                 )
             return SessionResult(SessionState.OFF, True, "WireGuard down; guard PPS yang tervalidasi dihapus.")
         except Exception as exc:
