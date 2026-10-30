@@ -70,7 +70,7 @@ python3 pps.py self-test
 python3 -m unittest discover -s tests -v
 python3 -m py_compile pps.py
 ```
-Tests cover proxy URL validation, rejection of embedded credentials/path traversal, config permissions, Tor-check response handling, and log-redaction behavior. live-test performs a real HTTPS request through the configured proxy and optionally compares direct egress IP. Network tests need a working proxy and internet.
+Tests cover proxy URL validation, rejection of embedded credentials/path traversal, config permissions, Tor-check response handling, and log-redaction behavior including refusal to overwrite existing output and rejection of symlink sources. live-test performs a real HTTPS request through the configured proxy and optionally compares direct egress IP. Network tests need a working proxy and internet.
 
 ## Security model
 - No shell is used for subprocess execution.
