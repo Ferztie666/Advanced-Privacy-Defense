@@ -7,10 +7,12 @@ Free/open-source Linux utility for proxy-aware application launches, existing Wi
 ## Features
 - CLI and Tkinter advanced GUI.
 - Tor SOCKS5/SOCKS5H and HTTP(S) proxy validation.
-- HTTPS egress test with curl through the configured proxy.\n- Explicit Tor Project verification (`pps tor-check`) using the configured proxy and the official check API; reports verified Tor exit or failure.
+- HTTPS egress test with curl through the configured proxy.
+- Explicit Tor Project verification (`pps tor-check`) using the configured proxy and the official check API; reports verified Tor exit or failure.
 - Launch child processes with proxy environment variables after successful proxy preflight.
 - Manage existing /etc/wireguard/*.conf profiles using wg-quick and typed confirmation.
-- Read-only indicators for routes, resolver configuration, nftables, and WireGuard.\n- `pps redact-log FILE`: create a separate mode-0600 copy with common tokens, authorization/cookie headers, email addresses, and `/home/USER` paths redacted.
+- Read-only indicators for routes, resolver configuration, nftables, and WireGuard.
+- `pps redact-log FILE`: create a separate mode-0600 copy with common tokens, authorization/cookie headers, email addresses, and `/home/USER` paths redacted.
 - Atomic configuration writes with restrictive permissions.
 - No telemetry.
 
