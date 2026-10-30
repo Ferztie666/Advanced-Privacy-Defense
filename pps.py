@@ -148,16 +148,16 @@ def launch_tool(tool, arguments, proxy):
     flag = TOOL_PROXY_FLAGS[tool]
     if any(arg == flag or arg.startswith(flag + "=") for arg in arguments):
         raise ValueError(f"Jangan berikan {flag} sendiri; PPS mengatur proxy secara terpusat.")
+    executable = shutil.which(tool)
+    if not executable:
+        print(f"[BLOCKED] Executable {tool} tidak ditemukan di PATH.", file=sys.stderr)
+        return 127
     validate_proxy(proxy)
     ok, detail = proxy_request(proxy)
     if not ok:
         print("[BLOCKED] Proxy preflight gagal:", detail, file=sys.stderr)
         print("Tool tidak dijalankan.", file=sys.stderr)
         return 2
-    executable = shutil.which(tool)
-    if not executable:
-        print(f"[BLOCKED] Executable {tool} tidak ditemukan di PATH.", file=sys.stderr)
-        return 127
     env = os.environ.copy()
     env.update({
         "HTTP_PROXY": proxy, "HTTPS_PROXY": proxy, "ALL_PROXY": proxy,
