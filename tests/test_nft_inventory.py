@@ -63,7 +63,7 @@ class NftInventoryTests(unittest.TestCase):
         result = inspect_guard_inventory(self.policy, nft_path="/usr/sbin/nft", runner=runner)
         self.assertEqual(result.status, GuardStatus.OWNED)
         self.assertEqual(runner.call_count, 2)
-        self.assertEqual(runner.call_args.args[0][-4:], ["table", "inet", "pps_guard"])
+        self.assertEqual(runner.call_args.args[0][-4:], ["list", "table", "inet", "pps_guard"])
 
     def test_present_but_unverifiable_table_is_unknown(self):
         runner = self.runner_for([inventory(
