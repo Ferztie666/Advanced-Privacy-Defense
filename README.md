@@ -104,3 +104,10 @@ route handling, endpoint reachability, DHCP/NAT behavior, DNS and IPv6 leak
 blocking, rollback, and tunnel-loss fail-closed behavior still require
 end-to-end VM tests and independent review. Do not enable it on a daily-use
 host.
+
+
+## Network-origin privacy requirement (development target)
+
+PPS is being developed to keep supported Kali guest traffic from falling back to the ordinary uplink while privacy mode is active. The intended design is a verified WireGuard full tunnel plus a PPS-owned fail-closed firewall. Remote Internet targets should normally see the selected VPN gateway's egress IP rather than the user's ISP public IP. This does not hide account identity, application data, browser fingerprints, timing correlation, or information visible to the VPN operator.
+
+Coverage is not yet implemented or verified: the branch still has no concrete Linux session backend or integrated system-wide privacy ON/OFF commands. DNS, IPv6, browser DoH/WebRTC, raw-socket tools, UDP, containers/network namespaces, and tunnel-loss behavior require disposable-Kali-VM packet-capture tests. Do not treat current proxy support or the read-only firewall modules as system-wide protection. See [the privacy-mode design and coverage requirements](docs/PRIVACY_MODE_DESIGN.md).
