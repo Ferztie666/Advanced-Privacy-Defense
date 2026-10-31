@@ -131,3 +131,46 @@ The inspector and transaction core are still separate modules; no production Lin
 `pps_privacy_adapter.py` maps the read-only inspector's three outcomes into the session manager's `GuardStatus`: OWNED, FOREIGN_OR_MODIFIED, and UNKNOWN. It deliberately cannot produce ABSENT. The current inspector invokes `nft -j list table inet pps_guard`; a failed command is ambiguous (missing table, permission failure, unavailable nft, or other error), so treating it as ABSENT would be unsafe. The adapter therefore cannot yet enable a fresh session by itself. A future read-only table-inventory operation must positively establish absence before the session can be safely wired to a Linux backend.
 
 The adapter is pure and has no system side effects. It is not yet connected to a production backend. Tests verify that no inspector result can be silently converted into ABSENT.
+
+
+## User requirement: protect network-origin information for Kali tools
+
+The product requirement is that supported tools launched inside the Kali guest must not send packets directly through the guest's ordinary uplink while privacy mode is active. For ordinary locally generated IP traffic, the intended path is:
+
+Kali application -> Linux routing -> PPS-owned fail-closed output policy -> WireGuard full tunnel -> selected VPN gateway -> authorized test system.
+
+The remote test system will normally observe the VPN gateway's public egress address, not the user's ISP-assigned public address. The VPN operator and upstream network still have visibility described by their own service architecture and policies. This is network-origin protection, not anonymity and not a promise that activity cannot be attributed by timing, account use, application data, endpoint fingerprinting, or other signals.
+
+### Coverage requirements
+
+| Information/path | Required behavior | Evidence required before claiming protected |
+|---|---|---|
+| Locally generated IPv4 TCP/UDP | Route through WireGuard; no direct-uplink fallback | Packet capture on guest uplink plus controlled egress test |
+| Locally generated IPv6 | Route through WireGuard when dual-stack is configured; otherwise block | IPv6 leak test and packet capture |
+| DNS | Use an explicitly selected resolver reachable through the tunnel; block direct DNS/DoT/DoH paths that violate policy | DNS capture and resolver-side test; application-specific DoH behavior documented |
+| VPN endpoint | Permit only the configured numeric endpoint and UDP port on the physical uplink | nft counter/rule inspection and packet capture |
+| Browser/WebRTC | Run separate browser privacy diagnostics; do not infer protection from VPN routing alone | Browser-specific leak tests |
+| Containers/namespaces/forwarded traffic | Out of initial support until dedicated namespace/forward-hook policy is implemented and tested | Separate integration suite |
+| Link-layer identifiers | MAC addresses are not routed to ordinary remote Internet targets; local LAN peers may see guest MAC | Document network boundary; do not claim MAC anonymization |
+| Application metadata | Do not claim User-Agent, cookies, account identity, TLS/client fingerprints, or payload data are hidden | Application-level review, outside VPN guarantee |
+
+The output guard is intended to fail closed for locally generated guest traffic. A future backend must prove that every relevant application shares the protected network namespace and that no alternate interface, policy-routing rule, raw socket path, or container forwarding path bypasses the guard. The current output-chain compiler alone does not prove this coverage.
+
+### Mandatory fail-closed acceptance criteria
+
+1. No direct IPv4 or IPv6 packet from the Kali guest reaches the physical uplink while privacy mode is active, except the exact configured WireGuard endpoint flow and explicitly justified network-maintenance traffic.
+2. If WireGuard stops, loses handshake, or its route disappears, ordinary egress stays blocked; no automatic direct-network fallback is allowed.
+3. DNS queries cannot escape through the physical uplink. Browser DoH and application custom resolvers must be tested separately; unknown behavior is reported as unverified, not protected.
+4. Tools that use raw sockets, UDP, helper processes, or their own resolver paths must be included in the test matrix. A tool is not considered covered merely because it accepts a proxy option or inherits proxy environment variables.
+5. Before each protected session, PPS verifies the selected interface, routes, guard ownership, handshake, and an independent egress observation. If any check is unavailable or contradictory, activation fails closed.
+6. The privacy status must distinguish VERIFIED, UNVERIFIED, and FAILED. It must never display a blanket 'all traffic protected' result based only on tunnel-up state.
+7. Integration testing must capture traffic on the VirtualBox guest's physical-facing interface while exercising representative TCP, UDP, DNS, IPv4, IPv6, browser, and scanner workflows. Test tunnel loss and route deletion deliberately.
+8. Only after those tests pass on the target Kali release may the feature be described as protecting the tested traffic classes. Unsupported namespaces and application behaviors remain explicitly out of scope.
+
+### Proxy and gateway trust
+
+PPS must not treat scraped public proxies as trusted merely because they respond or appear in a public list. A future optional gateway registry may contain only endpoints the user controls or has explicit permission to use, with documented operator, protocol, TLS behavior, and health checks. Do not silently rotate gateways during an active scan. Gateway changes must be explicit, auditable, and performed between authorized test sessions. The initial privacy mode remains one verified WireGuard full-tunnel gateway; multi-hop is a separate future design requiring its own threat model and integration tests.
+
+### Current implementation status (important)
+
+These are acceptance requirements, not claims of implemented protection. The current branch has a profile validator, pure nftables policy compiler, mock-tested transaction core, and read-only nftables ownership/inventory inspection. It still has no concrete Linux session backend, no integrated CLI privacy ON/status/check/OFF, and no live DNS/IPv6/egress leak enforcement. Therefore the current build must not be used or advertised as a system-wide privacy kill switch yet.
