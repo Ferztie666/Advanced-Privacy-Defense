@@ -44,6 +44,7 @@ def _target_table_present(stdout: str) -> bool | None:
         return None
 
     target_count = 0
+    metainfo_count = 0
     for item in entries:
         if not isinstance(item, dict) or len(item) != 1:
             return None
@@ -51,8 +52,18 @@ def _target_table_present(stdout: str) -> bool | None:
         if kind == "metainfo":
             if not isinstance(value, dict):
                 return None
-            # Known nft JSON metainfo fields only; tolerate versions that omit them.
-            if set(value) - {"version", "release_name", "json_schema_version"}:
+            # An empty list or absent version marker is not proof of a complete inventory.
+            metainfo_count += 1
+            if metainfo_count > 1 or set(value) - {"version", "release_name", "json_schema_version"}:
+                return None
+            if not isinstance(value.get("version"), str) or not value["version"]:
+                return None
+            if "release_name" in value and not isinstance(value["release_name"], str):
+                return None
+            if "json_schema_version" in value and (
+                isinstance(value["json_schema_version"], bool)
+                or not isinstance(value["json_schema_version"], int)
+            ):
                 return None
             continue
         if kind != "table" or not isinstance(value, dict):
@@ -69,7 +80,7 @@ def _target_table_present(stdout: str) -> bool | None:
             return None
         if value["family"] == "inet" and value["name"] == "pps_guard":
             target_count += 1
-    if target_count > 1:
+    if metainfo_count != 1 or target_count > 1:
         return None
     return target_count == 1
 
