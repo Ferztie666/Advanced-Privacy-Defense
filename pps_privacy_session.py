@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Protocol
+from typing import ContextManager, Protocol
 
 
 class SessionState(str, Enum):
@@ -31,6 +31,7 @@ class SessionResult:
 
 
 class PrivacyBackend(Protocol):
+    def session_lock(self) -> ContextManager[None]: ...
     def inspect_guard(self) -> GuardStatus: ...
     def install_guard(self) -> None: ...
     def interface_is_up(self) -> bool: ...
@@ -64,6 +65,17 @@ class PrivacySession:
         return b.inspect_guard() == GuardStatus.ABSENT
 
     def enable(self) -> SessionResult:
+        """Run enable while holding the backend's exclusive process-wide lock."""
+        try:
+            with self.backend.session_lock():
+                return self._enable_locked()
+        except Exception as exc:
+            return SessionResult(
+                SessionState.GUARDED_RECOVERY, False,
+                f"Lock sesi gagal diperoleh/dilepas; tidak melanjutkan perubahan: {exc}",
+            )
+
+    def _enable_locked(self) -> SessionResult:
         b = self.backend
         try:
             initial_guard = b.inspect_guard()
@@ -118,6 +130,17 @@ class PrivacySession:
                 )
 
     def disable(self) -> SessionResult:
+        """Run disable while holding the backend's exclusive process-wide lock."""
+        try:
+            with self.backend.session_lock():
+                return self._disable_locked()
+        except Exception as exc:
+            return SessionResult(
+                SessionState.GUARDED_RECOVERY, False,
+                f"Lock sesi gagal diperoleh/dilepas; tidak melanjutkan perubahan: {exc}",
+            )
+
+    def _disable_locked(self) -> SessionResult:
         b = self.backend
         try:
             status = b.inspect_guard()
