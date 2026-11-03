@@ -65,7 +65,15 @@ class OwnershipVerifierTests(unittest.TestCase):
             verify_owned_table(data, self.policy)
 
     def test_rejects_malformed_or_incomplete_output(self):
-        for raw in ("{", "{}", {"nftables": [{"metainfo": {}}]}):
+        for raw in (
+            "{", "{}", {"nftables": [{"metainfo": {}}]},
+            {"nftables": [{"table": {"family": "inet", "name": "pps_guard"}}]},
+            {"nftables": [
+                {"metainfo": {"version": "1.0"}},
+                {"metainfo": {"version": "1.0"}},
+                *fixture(self.policy)["nftables"][1:],
+            ]},
+        ):
             with self.subTest(raw=raw):
                 with self.assertRaises(OwnershipVerificationError):
                     verify_owned_table(raw, self.policy)
