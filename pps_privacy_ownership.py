@@ -85,11 +85,26 @@ def verify_owned_table(document: str | dict[str, Any], policy: FirewallPolicy) -
     tables: list[dict[str, Any]] = []
     chains: list[dict[str, Any]] = []
     rules: list[dict[str, Any]] = []
+    metainfo_count = 0
     for item in parsed["nftables"]:
         if not isinstance(item, dict) or len(item) != 1:
             raise OwnershipVerificationError("Objek nft JSON tidak dikenal.")
         kind, value = next(iter(item.items()))
         if kind == "metainfo":
+            metainfo_count += 1
+            if (
+                metainfo_count > 1
+                or not isinstance(value, dict)
+                or set(value) - {"version", "release_name", "json_schema_version"}
+                or not isinstance(value.get("version"), str)
+                or not value["version"]
+                or ("release_name" in value and not isinstance(value["release_name"], str))
+                or ("json_schema_version" in value and (
+                    isinstance(value["json_schema_version"], bool)
+                    or not isinstance(value["json_schema_version"], int)
+                ))
+            ):
+                raise OwnershipVerificationError("Metainfo nft JSON hilang, duplikat, atau tidak dikenal.")
             continue
         if kind not in {"table", "chain", "rule"} or not isinstance(value, dict):
             raise OwnershipVerificationError("Objek tambahan tidak diizinkan.")
@@ -102,6 +117,8 @@ def verify_owned_table(document: str | dict[str, Any], policy: FirewallPolicy) -
         else:
             rules.append(value)
 
+    if metainfo_count != 1:
+        raise OwnershipVerificationError("Metainfo nft JSON tidak lengkap atau duplikat.")
     if len(tables) != 1 or len(chains) != 1:
         raise OwnershipVerificationError("Tabel/chain hilang atau duplikat.")
     table = _strip_handles(tables[0])
