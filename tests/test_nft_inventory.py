@@ -79,7 +79,10 @@ class NftInventoryTests(unittest.TestCase):
 
     def test_malformed_or_unknown_inventory_never_proves_absence(self):
         fixtures = [
-            "{", json.dumps({"nftables": [{"rule": {}}]}),
+            "{", json.dumps({"nftables": []}),
+            json.dumps({"nftables": [{"metainfo": {} }]}),
+            json.dumps({"nftables": [{"metainfo": {"version": "1.0"}}, {"metainfo": {"version": "1.0"}}]}),
+            json.dumps({"nftables": [{"rule": {}}]}),
             json.dumps({"nftables": [{"table": {"family": "inet"}}]}),
             json.dumps({"nftables": [{"table": {"family": "inet", "name": "filter", "unexpected": 1}}]}),
             inventory(
