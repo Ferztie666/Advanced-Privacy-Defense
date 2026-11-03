@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 APP="Advanced Privacy Defense"
-VERSION="1.0.0"
+VERSION="1.2.2"
 DEFAULT_PROXY="socks5h://127.0.0.1:9050"
 WG_DIR=Path("/etc/wireguard")
 def config_path():
@@ -38,9 +38,23 @@ def save_config(data,path=None):
         except FileNotFoundError: pass
 def load_config(path=None):
     path=path or config_path()
+    flags=os.O_RDONLY | getattr(os,"O_NOFOLLOW",0) | getattr(os,"O_CLOEXEC",0) | getattr(os,"O_NONBLOCK",0)
     try:
-        raw=path.read_bytes()
-        if len(raw)>16384: raise ValueError("File konfigurasi terlalu besar.")
+        fd=os.open(path,flags)
+        try:
+            info=os.fstat(fd)
+            if not __import__("stat").S_ISREG(info.st_mode):
+                raise ValueError("Konfigurasi harus berupa file biasa; symlink/special file ditolak.")
+            if info.st_size>16384: raise ValueError("File konfigurasi terlalu besar.")
+            chunks=[]; total=0
+            while True:
+                chunk=os.read(fd,min(4096,16385-total))
+                if not chunk: break
+                chunks.append(chunk); total+=len(chunk)
+                if total>16384: raise ValueError("File konfigurasi terlalu besar.")
+            raw=b"".join(chunks)
+        finally:
+            os.close(fd)
         data=json.loads(raw.decode("utf-8"))
         if not isinstance(data,dict): raise ValueError("Format konfigurasi tidak valid.")
         result=defaults(); result.update(data); validate_proxy(result["proxy"])
@@ -72,6 +86,26 @@ def proxy_request(proxy,timeout=20):
     try: ipaddress.ip_address(value)
     except ValueError: return False,"Endpoint tes tidak mengembalikan IP valid."
     return True,value
+def tor_check(proxy=None,timeout=20):
+    """Verify the configured SOCKS proxy against Tor Project's own check API."""
+    proxy=proxy or load_config()["proxy"]
+    validate_proxy(proxy)
+    curl=shutil.which("curl")
+    if not curl: return False,"curl tidak ditemukan."
+    r=run_cmd([curl,"--silent","--show-error","--fail","--connect-timeout","8","--max-time",str(timeout),"--proxy",proxy,"--noproxy","","--proto","=https","--tlsv1.2","https://check.torproject.org/api/ip"],timeout+3)
+    if r is None: return False,"Tor check gagal/timeout."
+    if r.returncode: return False,r.stderr.strip() or "Tor check endpoint tidak dapat dijangkau."
+    try:
+        data=json.loads(r.stdout)
+        if not isinstance(data,dict) or not isinstance(data.get("IsTor"),bool):
+            raise ValueError("Respons API tidak memiliki IsTor boolean.")
+        exit_ip=str(ipaddress.ip_address(data.get("IP","")))
+    except (ValueError,TypeError,json.JSONDecodeError) as e:
+        return False,f"Respons Tor check tidak valid: {e}"
+    if data["IsTor"] is not True:
+        return False,f"Proxy merespons tetapi tidak terverifikasi sebagai exit Tor (IP: {exit_ip})."
+    return True,f"Tor terverifikasi oleh check.torproject.org; exit IP: {exit_ip}"
+
 def direct_ip_request():
     curl=shutil.which("curl")
     if not curl: return None
@@ -90,6 +124,121 @@ def launch(command,proxy):
     print("[WARN] Aplikasi tujuan masih dapat mengabaikan proxy environment.")
     try: return subprocess.run(command,env=env,check=False).returncode
     except OSError as e: print("Gagal menjalankan aplikasi:",e,file=sys.stderr); return 127
+TOOL_PROXY_FLAGS = {
+    "subfinder": "-proxy",
+    "dalfox": "--proxy",
+    "nuclei": "-proxy",
+}
+
+def launch_tool(tool, arguments, proxy):
+    """Run a supported scanner with its native proxy flag and fail-closed preflight.
+
+    Nmap is deliberately excluded: its --proxies option does not cover all scan
+    phases, so it cannot provide the egress protection this command promises.
+    """
+    tool = str(tool).lower()
+    if tool == "nmap":
+        print("[BLOCKED] Nmap tidak didukung dalam mode proxy PPS: --proxies tidak melindungi semua fase scan.", file=sys.stderr)
+        print("Gunakan VPN full-tunnel yang sudah diverifikasi secara terpisah; PPS belum menyediakan kill switch.", file=sys.stderr)
+        return 2
+    if tool not in TOOL_PROXY_FLAGS:
+        raise ValueError("Tool tidak didukung. Pilihan: subfinder, dalfox, nuclei; Nmap diblokir pada mode proxy.")
+    if not arguments:
+        raise ValueError("Argumen tool wajib diberikan setelah --.")
+    flag = TOOL_PROXY_FLAGS[tool]
+    if any(arg == flag or arg.startswith(flag + "=") for arg in arguments):
+        raise ValueError(f"Jangan berikan {flag} sendiri; PPS mengatur proxy secara terpusat.")
+    executable = shutil.which(tool)
+    if not executable:
+        print(f"[BLOCKED] Executable {tool} tidak ditemukan di PATH.", file=sys.stderr)
+        return 127
+    validate_proxy(proxy)
+    ok, detail = proxy_request(proxy)
+    if not ok:
+        print("[BLOCKED] Proxy preflight gagal:", detail, file=sys.stderr)
+        print("Tool tidak dijalankan.", file=sys.stderr)
+        return 2
+    env = os.environ.copy()
+    env.update({
+        "HTTP_PROXY": proxy, "HTTPS_PROXY": proxy, "ALL_PROXY": proxy,
+        "http_proxy": proxy, "https_proxy": proxy, "all_proxy": proxy,
+        "NO_PROXY": "localhost,127.0.0.1,::1", "no_proxy": "localhost,127.0.0.1,::1",
+    })
+    command = [executable, flag, proxy, *arguments]
+    print(f"[PASS] Proxy preflight berhasil; menjalankan {tool} dengan native proxy flag.")
+    print("[WARN] Pastikan versi tool yang terpasang mendukung opsi tersebut; audit egress tetap diperlukan.")
+    try:
+        return subprocess.run(command, env=env, check=False).returncode
+    except OSError as e:
+        print(f"Gagal menjalankan {tool}: {e}", file=sys.stderr)
+        return 127
+
+def redact_text(content):
+    """Remove common credentials and local identity markers from text before sharing."""
+    patterns = [
+        (r"(?i)(authorization\s*:\s*bearer\s+)[^\s,;]+", r"\1[REDACTED]"),
+        (r"(?i)(authorization\s*:\s*basic\s+)[^\s,;]+", r"\1[REDACTED]"),
+        (r"(?i)(\b(?:password|passwd|token|api[_-]?key|secret|client_secret)\b\s*[=:]\s*)[\"']?[^\s,;\"']+", r"\1[REDACTED]"),
+        (r"(?i)(\b(?:set-cookie|cookie)\s*:\s*)[^\r\n]+", r"\1[REDACTED]"),
+        (r"(?i)([?&](?:token|key|secret|password|auth)=)[^&\s]+", r"\1[REDACTED]"),
+        (r"(?i)[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", "[EMAIL_REDACTED]"),
+        (r"(?i)(/home/)[^/\s]+", r"\1[USER]"),
+    ]
+    result=content
+    for pattern,replacement in patterns: result=re.sub(pattern,replacement,result)
+    return result
+
+def redact_file(source,destination=None):
+    """Write a private redacted copy; open source without following symlinks."""
+    import stat
+
+    source=Path(source).expanduser()
+    flags=os.O_RDONLY | getattr(os,"O_NOFOLLOW",0) | getattr(os,"O_CLOEXEC",0) | getattr(os,"O_NONBLOCK",0)
+    try:
+        source_fd=os.open(source,flags)
+    except OSError as e:
+        raise ValueError(f"File sumber tidak dapat dibuka dengan aman: {e}") from e
+    try:
+        info=os.fstat(source_fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("Sumber harus file biasa; symlink dan special file ditolak.")
+        if info.st_size > 5*1024*1024:
+            raise ValueError("File melebihi batas 5 MiB.")
+        chunks=[]; total=0
+        while True:
+            chunk=os.read(source_fd,min(65536,5*1024*1024+1-total))
+            if not chunk: break
+            chunks.append(chunk); total+=len(chunk)
+            if total>5*1024*1024:
+                raise ValueError("File melebihi batas 5 MiB.")
+        raw=b"".join(chunks)
+    finally:
+        os.close(source_fd)
+
+    cleaned=redact_text(raw.decode("utf-8",errors="replace"))
+    target=Path(destination).expanduser() if destination else source.with_name(source.name+".redacted")
+    try:
+        if target.exists() and os.path.samefile(source,target):
+            raise ValueError("Output tidak boleh menunjuk ke file sumber.")
+    except FileNotFoundError:
+        pass
+    target.parent.mkdir(parents=True,exist_ok=True)
+    if target.exists() or target.is_symlink():
+        raise ValueError("File output sudah ada; pilih nama output lain agar data tidak tertimpa.")
+    fd,tmp=tempfile.mkstemp(prefix=".pps-redact-",dir=str(target.parent))
+    try:
+        os.fchmod(fd,0o600)
+        with os.fdopen(fd,"w",encoding="utf-8") as stream:
+            stream.write(cleaned); stream.flush(); os.fsync(stream.fileno())
+        # Atomic no-clobber publication: link fails if target appeared concurrently.
+        os.link(tmp,target)
+    except FileExistsError as e:
+        raise ValueError("File output sudah ada; tidak ditimpa.") from e
+    finally:
+        try: os.unlink(tmp)
+        except FileNotFoundError: pass
+    return target
+
 def safe_profile(name):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}",name): raise ValueError("Nama profil WireGuard tidak valid.")
     return name
@@ -189,13 +338,18 @@ def gui():
     for label,fn in (("Save Proxy",save),("Test Proxy",test),("Network Audit",net),("Unit Tests",lambda: bg("Unit tests",run_tests))):
         ttk.Button(row,text=label,command=fn).pack(side="left",padx=3)
     log("Ready. Firewall global tidak diubah otomatis.")
+    log("CLI: pps tor-check untuk verifikasi exit Tor resmi.")
     log("WireGuard: gunakan CLI pps wg up/down NAMA_PROFIL.")
     root.mainloop(); return 0
 def main(argv=None):
     parser=argparse.ArgumentParser(prog="pps",description=APP); sub=parser.add_subparsers(dest="action")
-    for name in ("status","audit","live-test","self-test","gui"): sub.add_parser(name)
+    for name in ("status","audit","live-test","tor-check","self-test","gui"): sub.add_parser(name)
+    p=sub.add_parser("redact-log",help="Redact common secrets and local identifiers from a text log"); p.add_argument("file"); p.add_argument("-o","--output",default=None)
     p=sub.add_parser("set-proxy"); p.add_argument("url")
     p=sub.add_parser("run"); p.add_argument("--proxy",default=None); p.add_argument("command",nargs=argparse.REMAINDER)
+    p=sub.add_parser("tool-run",help="Run supported scanners with native proxy integration")
+    p.add_argument("tool",choices=("subfinder","dalfox","nuclei","nmap"))
+    p.add_argument("--proxy",default=None); p.add_argument("arguments",nargs=argparse.REMAINDER)
     p=sub.add_parser("wg"); p.add_argument("operation",choices=("up","down")); p.add_argument("profile")
     a=parser.parse_args(argv)
     try:
@@ -203,9 +357,13 @@ def main(argv=None):
             c=load_config(); print(f"{APP} v{VERSION}\nMode: {c['mode']} | Scope: {c['scope']}\nProxy: {c['proxy']}\nConfig: {config_path()}\nWireGuard: {', '.join(profiles()) or 'none'}"); return 0
         if a.action=="audit": audit(); return 0
         if a.action=="self-test": return self_test()
+        if a.action=="redact-log":
+            target=redact_file(a.file,a.output); print(f"Redacted copy saved: {target} (mode 0600). Review manually before sharing."); return 0
         if a.action=="gui": return gui()
         if a.action=="set-proxy":
             c=load_config(); c["proxy"]=a.url; save_config(c); print("Proxy tersimpan."); return 0
+        if a.action=="tor-check":
+            ok,detail=tor_check(load_config()["proxy"]); print(("[PASS] " if ok else "[FAIL] ")+detail); return 0 if ok else 1
         if a.action=="live-test":
             ok,detail=proxy_request(load_config()["proxy"]); print(("[PASS] " if ok else "[FAIL] ")+detail)
             if ok:
