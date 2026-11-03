@@ -1,4 +1,5 @@
 import unittest
+from contextlib import contextmanager
 
 from pps_privacy_session import GuardStatus, PrivacySession, SessionState
 
@@ -10,6 +11,21 @@ class FakeBackend:
         self.up = pre_up
         self.owned = owned
         self.calls = []
+        self.locked = False
+
+    @contextmanager
+    def session_lock(self):
+        self.calls.append("lock_acquire")
+        if self.fail == "lock_acquire":
+            raise RuntimeError("injected lock acquisition failure")
+        if self.locked:
+            raise RuntimeError("lock already held")
+        self.locked = True
+        try:
+            yield
+        finally:
+            self.locked = False
+            self.calls.append("lock_release")
 
     def call(self, name):
         self.calls.append(name)
@@ -63,6 +79,29 @@ class FakeBackend:
 
 
 class PrivacySessionTests(unittest.TestCase):
+    def test_enable_holds_exclusive_lock_for_entire_transaction(self):
+        b = FakeBackend()
+        result = PrivacySession(b).enable()
+        self.assertTrue(result.ok)
+        self.assertLess(b.calls.index("lock_acquire"), b.calls.index("inspect_guard"))
+        self.assertLess(b.calls.index("verify_egress"), b.calls.index("lock_release"))
+        self.assertFalse(b.locked)
+
+    def test_enable_fails_closed_when_lock_cannot_be_acquired(self):
+        b = FakeBackend(fail="lock_acquire")
+        result = PrivacySession(b).enable()
+        self.assertEqual(result.state, SessionState.GUARDED_RECOVERY)
+        self.assertFalse(result.ok)
+        self.assertNotIn("inspect_guard", b.calls)
+        self.assertNotIn("install_guard", b.calls)
+
+    def test_disable_fails_closed_when_lock_cannot_be_acquired(self):
+        b = FakeBackend(fail="lock_acquire", pre_guard=GuardStatus.OWNED, pre_up=True)
+        result = PrivacySession(b).disable()
+        self.assertEqual(result.state, SessionState.GUARDED_RECOVERY)
+        self.assertNotIn("inspect_guard", b.calls)
+        self.assertNotIn("bring_interface_down", b.calls)
+
     def test_enable_order_and_success(self):
         b = FakeBackend()
         result = PrivacySession(b).enable()
